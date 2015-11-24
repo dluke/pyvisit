@@ -1,0 +1,2 @@
+#!/bin/bash
+echo "dir()" | visit -cli -nowin -forceinteractivecli | tr ',' '\n' | tr -d " '" 
