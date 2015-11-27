@@ -1,115 +1,169 @@
-# Try and open a database, plot something, draw and display
+# this module represents a set of streamline plots (flux tubes) directly
+# Generalise this by using objects  
 
 # Use this session to store all the expressions
 # As well as anything else that is separate from data
 #RestoreSession("~/sessions/visit_setup.session", 0)
 
+# Try and open a database, plot something, draw and display
 #OpenDatabase('*.cfd database')
 
 # Visit sets the attributes for the active plots
 # have to set active plot every time we change attributes
-# A two way dictionary might be ideal, I'll think I'll stick with a dict() for now
 
 from visit import *
+from nav import *
 
 # Configure
-density = 8
+density = 6
 radius = 0.6
 
 ## The tools for plotting flux tubes
 plots = {}
 
+# four streamline plots with pinch configuration
+pinch = 0.7
+def update_pinch(pinch):
+    global fixed_points
+    # Anticlockwise from top right
+    fixed_points = [(1,1), (-pinch, pinch), (-1,-1), (pinch ,-pinch)]
+update_pinch(pinch)
 
-def set_fluxtube(plot, x, y):
-    SetActivePlots(plot)
-    StreamlineAtts = GetPlotOptions()
+# tube colors
+# 4th number is opacity?
+cyan = (75, 224, 235, 255)
+green = (144, 235, 75, 255)
+red = (235, 86, 75)
+purple = (170, 88, 232)
+full = (255, 0, 0, 255)
+clist = [cyan, green, red, purple]
 
-    # Set attributes
-    # Specifying a circle here
-    StreamlineAtts.sourceType = StreamlineAtts.SpecifiedCircle  
-    # SpecifiedPoint, SpecifiedPointList, SpecifiedLine, SpecifiedCircle, SpecifiedPlane, SpecifiedSphere, SpecifiedBox, Selection
-    StreamlineAtts.pointSource = (0, 0, 0)
-    StreamlineAtts.lineStart = (0, 0, 0)
-    StreamlineAtts.lineEnd = (1, 0, 0)
-    # These 4 attrs describe the circle
-    StreamlineAtts.planeOrigin = (x, y, -24)
-    StreamlineAtts.planeNormal = (0, 0, 1)
-    StreamlineAtts.planeUpAxis = (0, 1, 0)
-    StreamlineAtts.radius = radius
-    # 3 attrs not important
-    StreamlineAtts.sphereOrigin = (0, 0, 0)
-    StreamlineAtts.boxExtents = (0, 1, 0, 1, 0, 1)
-    StreamlineAtts.useWholeBox = 1
-    # Not sure about this one
-    StreamlineAtts.pointList = (0, 0, 0, 1, 0, 0, 0, 1, 0)
-    # Sample density, ie. number of sample around circle boundary is 8
-    StreamlineAtts.sampleDensity0 = density
-    StreamlineAtts.sampleDensity1 = density
-    StreamlineAtts.sampleDensity2 = 2
-    # Coloring method should be useful - i.e color by magBxy is possible?
-    #Solid, ColorBySpeed, ColorByVorticity, ColorByLength, ColorByTime, ColorBySeedPointID, ColorByVariable, ColorByCorrelationDistance
-    StreamlineAtts.coloringMethod = StreamlineAtts.ColorByTime
-    StreamlineAtts.colorTableName = "Default"
-    StreamlineAtts.singleColor = (0, 0, 0, 255)
-    # I set this from 1 to 0
-    StreamlineAtts.showSeeds = 0
+## Manage tube variables
 
-    SetPlotOptions(StreamlineAtts)
-
-def adjust_lines(plot, density=density, radius=radius):
+def set_attr(plot, attr, value):
+    # Deal with the attributes of one plot at a time
     SetActivePlots(plot)
     Atts = GetPlotOptions()
-    Atts.sampleDensity0 = density
-    Atts.sampleDensity1 = density
-    Atts.radius = radius
+    setattr(Atts, attr, value)
     SetPlotOptions(Atts)
 
-def adjust_all(adjuster):
-    # Can pares ListPlots() string to gain more control
-    for plot in range(GetNumPlots()):
-        adjuster(plot)
-        
+class FluxTube(object):
 
+    colorstyles = ['default', 'magBxy', 'tubes']
 
-
-# four streamline plots 
-pinch = 0.7
-fixed_points = [(1,1), (-1,-1), (-pinch, pinch), (pinch ,-pinch)]
-def plot_tubes(fixed_points):
-    for _ in range(len(fixed_points)):
+    def __init__(self, xy, color, density=density, radius=radius, z=-24):
+        # plot if the visit plot identifier
         AddPlot("Streamline", "B", 1, 0)
+        self.plot = GetNumPlots() -1 
 
-    for i, fp in enumerate(fixed_points):
-        x,y = fp
-        set_fluxtube(i, x, y)
+        # define proxies
+        self.z = z
+        self._xy = xy
+        self._color = color
+        self._density = density
+        self._radius = radius
+        # coloring mode is initialised in another call
+        self._colorstyle= 'default'
 
-def orient():
-    # This is just a rotation
-    # Begin spontaneous state
-    View3DAtts = View3DAttributes()
-    View3DAtts.viewNormal = (-0.538069, -0.490617, 0.685403)
-    View3DAtts.focus = (0, 0, 0)
-    View3DAtts.viewUp = (0.069032, 0.784767, 0.615935)
-    View3DAtts.viewAngle = 30
-    View3DAtts.parallelScale = 25.4558
-    View3DAtts.nearPlane = -50.9117
-    View3DAtts.farPlane = 50.9117
-    View3DAtts.imagePan = (0, 0)
-    View3DAtts.imageZoom = 1
-    View3DAtts.perspective = 1
-    View3DAtts.eyeAngle = 2
-    View3DAtts.centerOfRotationSet = 0
-    View3DAtts.centerOfRotation = (0, 0, 0)
-    View3DAtts.axis3DScaleFlag = 0
-    View3DAtts.axis3DScales = (1, 1, 1)
-    View3DAtts.shear = (0, 0, 1)
-    View3DAtts.windowValid = 1
-    SetView3D(View3DAtts)
-    # End spontaneous state
 
+        # The Atts object is very important
+        # All the other instance variables are just proxies for Atts fields
+        SetActivePlots(self.plot)
+        # Store this as instance only for access to constants
+        self.Atts = GetPlotOptions()
+        Atts = self.Atts
+
+        # Set attributes
+        # Specifying a circle here
+        Atts.sourceType = Atts.SpecifiedCircle  
+        # SpecifiedPoint, SpecifiedPointList, SpecifiedLine, SpecifiedCircle, SpecifiedPlane, SpecifiedSphere, SpecifiedBox, Selection
+        Atts.pointSource = (0, 0, 0)
+        Atts.lineStart = (0, 0, 0)
+        Atts.lineEnd = (1, 0, 0)
+        # These 4 attrs describe the circle
+        x,y, = xy
+        Atts.planeOrigin = (x, y, self.z)
+        Atts.planeNormal = (0, 0, 1)
+        Atts.planeUpAxis = (0, 1, 0)
+        Atts.radius = radius
+        # Not sure about this one
+        Atts.pointList = (0, 0, 0, 1, 0, 0, 0, 1, 0)
+        # Sample density, ie. number of sample around circle boundary is 8
+        Atts.sampleDensity0 = density
+        Atts.sampleDensity1 = 2
+        Atts.sampleDensity2 = 2
+        # Coloring method should be useful - i.e color by magBxy is possible?
+        #Solid, ColorBySpeed, ColorByVorticity, ColorByLength, ColorByTime, ColorBySeedPointID, 
+        #ColorByVariable, ColorByCorrelationDistance
+        Atts.coloringMethod = Atts.ColorByTime
+        Atts.colorTableName = "Default"
+        Atts.singleColor = color
+        # I set this from 1 to 0
+        Atts.showSeeds = 0
+
+        SetPlotOptions(Atts)
+
+
+    def attr(self, attr, val):
+        set_attr(self.plot, attr, val)
+    @property
+    def density(self): return self._density
+    @density.setter
+    def density(self, dens):
+        self._density = dens
+        set_attr(self.plot, 'sampleDensity0', dens)
+
+    @property
+    def radius(self): return self._radius
+    @radius.setter
+    def radius(self, rad):
+        self._radius = rad
+        set_attr(self.plot, 'radius', rad)
+
+    @property
+    def xy(self): return self._xy
+    @xy.setter
+    def xy(self, v):
+        self._xy = v
+        x, y = v
+        set_attr(self.plot, 'planeOrigin', (x,y,self.z))
+
+    @property
+    def color(self): return self_color
+    @color.setter
+    def color(self, c):
+        self._color = c
+        set_attr(self.plot, 'singleColor', c)
+
+    @property
+    def colorstyle(self):
+        return self._colorstyle
+    @colorstyle.setter
+    def colorstyle(self, style):
+        self._colorstyle= style
+        if style is 'default':
+            set_attr(self.plot, 'coloringMethod', self.Atts.ColorByTime)
+        elif style is 'magBxy':
+            set_attr(self.plot, 'coloringMethod', self.Atts.ColorByVariable)
+            self.attr('colorTableName', 'Default')
+            self.attr('coloringVariable', 'magBxy')
+        elif style is 'tubes':
+            self.attr('coloringMethod', self.Atts.Solid)
+
+
+plots = []
+# setup 4 plots for a list of points
+def setup_tubes(fixed):
+    for i, fp in enumerate(fixed):
+        FT = FluxTube(fp, clist[i])
+        FT.colorstyle = 'tubes'
+        plots.append(FT)
+
+# Control functions 
 def plot():
-    plot_tubes(fixed_points)
+    setup_tubes(fixed_points)
     # draw
     DrawPlots()
     orient()
+
 
